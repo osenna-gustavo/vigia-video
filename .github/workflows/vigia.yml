@@ -1,0 +1,46 @@
+# Alarme de queda do video de vendas da GePro (cto-gagil, 26/09/2026).
+# A cada 5 min (o GitHub pode atrasar alguns minutos) confere:
+#  1) o video atual (MediaCMS, media.gustavosenna.com.br);
+#  2) o video protegido novo (link temporario -> lista -> pedaco de video).
+# Avisa no Discord #financeiro so quando MUDA (caiu / voltou). Enquanto estiver fora, o GitHub manda e-mail de falha.
+name: Vigia do video
+on:
+  schedule: [ { cron: '*/5 * * * *' } ]
+  workflow_dispatch:
+permissions: { contents: write }
+concurrency: { group: vigia, cancel-in-progress: false }
+jobs:
+  vigiar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Conferir
+        id: c
+        run: |
+          set -u; FALHAS=""
+          chk(){ curl -s -o /dev/null -m 20 --retry 2 --retry-delay 5 -w '%{http_code}' "$@"; }
+          [ "$(chk https://media.gustavosenna.com.br/)" = "200" ] || FALHAS="$FALHAS video-atual(media.gustavosenna.com.br)"
+          U=https://n8n.gustavosenna.com.br
+          SRC=$(curl -s -m 20 -H "Referer: $U/video-demo/" $U/video-demo/token | jq -r .src 2>/dev/null)
+          if [ -z "$SRC" ] || [ "$SRC" = "null" ]; then FALHAS="$FALHAS video-protegido(link)"
+          else
+            [ "$(chk "$SRC")" = "200" ] || FALHAS="$FALHAS video-protegido(lista)"
+            [ "$(chk "${SRC%master.m3u8}v2/seg0000.ts")" = "200" ] || FALHAS="$FALHAS video-protegido(pedaco)"
+          fi
+          echo "falhas=$FALHAS" >> "$GITHUB_OUTPUT"; echo "Falhas:${FALHAS:- nenhuma}"
+      - name: Avisar se mudou
+        env:
+          TOKEN: ${{ secrets.GAGIL_DISCORD_BOT_TOKEN }}
+          CANAL: ${{ secrets.GAGIL_DISCORD_FINANCIAL_CHANNEL }}
+          FALHAS: ${{ steps.c.outputs.falhas }}
+        run: |
+          ANTES=$(cat estado.txt 2>/dev/null || echo ok); AGORA=ok; [ -n "$FALHAS" ] && AGORA=fora
+          if [ "$ANTES" != "$AGORA" ]; then
+            if [ "$AGORA" = fora ]; then MSG="🔴 VÍDEO DE VENDAS FORA DO AR:$FALHAS. O CTO precisa olhar agora."; else MSG="🟢 Vídeo de vendas voltou ao ar."; fi
+            curl -fsS -X POST "https://discord.com/api/v10/channels/$CANAL/messages" -H "Authorization: Bot $TOKEN" -H "Content-Type: application/json" -d "$(jq -n --arg c "$MSG" '{content:$c}')" >/dev/null && echo "aviso enviado"
+            echo "$AGORA" > estado.txt
+            git config user.name vigia-bot; git config user.email vigia-bot@users.noreply.github.com
+            git add estado.txt; git commit -qm "estado: $AGORA"; git push -q
+          fi
+          [ "$AGORA" = ok ]
