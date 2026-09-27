@@ -28,6 +28,7 @@ jobs:
             [ "$(chk "$SRC")" = "200" ] || FALHAS="$FALHAS video-protegido(lista)"
             [ "$(chk "${SRC%master.m3u8}v2/seg0000.ts")" = "200" ] || FALHAS="$FALHAS video-protegido(pedaco)"
           fi
+          [ "$(chk https://pub-75ac90f36f634bfbbb574c048c517297.r2.dev/hls/master.m3u8)" = "200" ] || FALHAS="$FALHAS reserva(Cloudflare)"
           echo "falhas=$FALHAS" >> "$GITHUB_OUTPUT"; echo "Falhas:${FALHAS:- nenhuma}"
       - name: Avisar se mudou
         env:
