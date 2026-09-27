@@ -43,4 +43,17 @@ jobs:
             git config user.name vigia-bot; git config user.email vigia-bot@users.noreply.github.com
             git add estado.txt; git commit -qm "estado: $AGORA"; git push -q
           fi
-          [ "$AGORA" = ok ]
+      # O GitHub desliga agendamentos de repositorio publico parado ha 60 dias: 1 registro por dia mantem vivo.
+      - name: Manter o agendamento vivo
+        if: always()
+        run: |
+          HOJE=$(date -u +%F)
+          if [ "$(cat ultimo-dia.txt 2>/dev/null)" != "$HOJE" ]; then
+            git pull -q || true; echo "$HOJE" > ultimo-dia.txt
+            git config user.name vigia-bot; git config user.email vigia-bot@users.noreply.github.com
+            git add ultimo-dia.txt; git commit -qm "vivo: $HOJE" && git push -q || true
+          fi
+      - name: Resultado (falha = e-mail do GitHub)
+        env:
+          FALHAS: ${{ steps.c.outputs.falhas }}
+        run: '[ -z "$FALHAS" ]'
